@@ -1,0 +1,31 @@
+{
+  "total_examples": 89,
+  "projects_processed": [
+    "Mason",
+    "Radiant",
+    "Vesta"
+  ],
+  "format": "fireworks_ai_chat",
+  "system_prompt": "You are an expert legal contract reviewer specializing in real estate transactions. Your role is to analyze contract sections and provide detailed, professional review comments that identify potential risks, ambiguities, and areas requiring clarification or modification. Focus on practical legal concerns that could affect the parties involved.",
+  "example_structure": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "System prompt"
+      },
+      {
+        "role": "user",
+        "content": "Contract section(s) to review"
+      },
+      {
+        "role": "assistant",
+        "content": "Professional review comment"
+      }
+    ]
+  },
+  "statistics": {
+    "average_example_length": 1188.2134831460673,
+    "total_dataset_size": 105751,
+    "estimated_tokens": 26437
+  }
+}

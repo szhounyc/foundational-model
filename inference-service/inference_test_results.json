@@ -1,0 +1,20 @@
+{
+  "total_tests": 2,
+  "passed_tests": 1,
+  "failed_tests": 1,
+  "success_rate": 0.5,
+  "results": [
+    {
+      "test": "Service Health Check",
+      "success": true,
+      "details": "Service running on cpu",
+      "timestamp": 1748709522.054246
+    },
+    {
+      "test": "Model Discovery",
+      "success": false,
+      "details": "No models found",
+      "timestamp": 1748709522.057878
+    }
+  ]
+}

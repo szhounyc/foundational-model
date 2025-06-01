@@ -1,0 +1,65 @@
+{
+  "project_id": "Mason",
+  "pdf_files": [
+    "../../dataset/zlg-re/MNTN/Mason/40-46 24th Street - Unit 5G Rider.pdf",
+    "../../dataset/zlg-re/MNTN/Mason/Unit 5G - 40-46 24th Street - Purchase Agreement (Suo).pdf"
+  ],
+  "word_file": "../../dataset/zlg-re/MNTN/Mason/Contract Comments MNTN Mason.docx",
+  "sections_found": [
+    "17.3"
+  ],
+  "review_comments_count": 10,
+  "review_comments": [
+    {
+      "comment": "Below, please find our comments regarding the contract. Please feel free to let us know if you have any comments. Questions: What is the current status of 421A tax abatement? Per offering plan special risk #2, to obtain 421A, the unit owners need to keep the unit as primary residence for at least 5 years after the closing. If Unit 5C owner decides to rent it out within 5 years, will the condo allow it? Or the condo will not allow it as condo needs to apply for 421A? What is the unit owner’s obligation here? New 421A rule also requires the all units be sold. Does that mean, 5C may get 421A until several years later, after sale of all units as well as approval of 421A application? Is the offering plan declared effective? What is the date for the first unit closing? Please advise whether the permanent certificate of occupancy has been obtained. If yes, please provide a copy of the certificate.  If not, please provide the temporary C/O. Please advise whether the permanent certificate of occupancy has been obtained. If yes, please provide a copy of the certificate. Please advise if the building has obtained any temporary or permanent Certificate of Occupancy. If yes, please email us a copy of the C/O Please provide the most recent temporary c/o (the current one in the 6th amendment expires). Please advise the expected timeline for the permanent certificate of occupancy. If the sponsor fails to get the permeant c/o after the closing, what is the solution?  Please advise. How many units have been sold or leased by the sponsor so far?   Sold:         Leased: Is unit 4C currently leased to a tenant? When purchaser visited the unit last time, he noticed that somebody may live in the unit at this moment Please advise whether 38D unit has any lot line windows. What is the construction status of unit 45D? What is the expected closing date (time range) Please provide financial statements for the recent three years",
+      "section_references": []
+    },
+    {
+      "comment": "Please advise the projected monthly tax and common charges for apartment 4C. Per the amendment No.1, the monthly common charge is $ 2,106.23 and real estate tax is $2,028.53. However, Purchaser was informed of different figures: common charge $1,560; real estate tax $2,900. Please advise.",
+      "section_references": [
+        "106.23",
+        "028.53"
+      ]
+    },
+    {
+      "comment": "Washer and dryer: per offering plan, washer and dryer are not included in the purchase price. However, purchaser would like to double confirm as he noticed washer and dryer in the room last time when he visited 4C Maintenance and repairs: please kindly advise whether there is any maintenance or repairs of the building since its first closing Deal sheet: if possible, please kindly forward the deal sheet Please advise when the offering plan has been declared effective. Funds: my client may form an LLC to sign the contract and hold the property. Client will not physically attend the closing due to the travel restriction. For both deposit and final installment, could we ask the client to wire the funds to your sponsor’s account directly? The funds may not from this LLC account, but from an individual account? The buyer has a dog. Please forward us the pet rule e.g., how many dogs a buyer could have & any fees associated with raising a pet in the Unit The buyer may lease the apt after several years. Is there any lease term restriction? E.g., buyer could only sign a lease with a tenant for 1-year?  Please advise where to find the lease requirement. What is the home owner insurance requirement for this Unit? Is the sponsor eligible for mortgage recording tax credit? Buyer is obtaining financing. Does the sponsor require its lender to assign a portion of its mortgage to buyer’s lender to be consolidated with buyer’s new loan (customarily known as a “CEMA”) and Purchaser shall pay to sponsor an amount equal to (but not in excess thereof) the Mortgage Recording Tax that would otherwise be payable by Purchaser to the City and State of New York on the recording of Purchaser’s mortgage?  If it is required, the buyer needs to first talk with his/her lender to see if the bank accepts such an arrangement. Sponsor legal fees: sponsor will get financing. Does the buyer need to pay sponsor 1) ACRIC fees and 2) sponsor loan-related legal fees as the buyer is obtaining financing? PSA Comments",
+      "section_references": []
+    },
+    {
+      "comment": "Section 5.1: Purchaser wants to reserve a FREE right of closing adjournment up to thirty (30) days.",
+      "section_references": [
+        "5.1"
+      ]
+    },
+    {
+      "comment": "The closing date shall be no earlier than XXX Add outside closing date: In the event Sponsor is unable to convey title to the Unit on or before XXXX (the “Outside Closing Date”), provided that such inability to convey is (x) not due to the fault of Purchaser, its lender, agents and/or representatives, and (y) not pursuant to any adjournment rights of Purchaser pursuant to the Agreement and any riders thereto, then, if Purchaser is not otherwise in default under the Agreement, Purchaser may terminate this Agreement by written notice of termination to Sponsor.  If Purchaser so elects to terminate this Agreement, Sponsor shall within ten (10) days after receipt of notice of termination from Purchaser, return to Purchaser all sums deposited by Purchaser hereunder, together with interest earned thereon, if any, and upon making such payment, this Agreement shall be terminated and neither party hereto shall have any further rights, obligations or liabilities to or against the other party under this Agreement or the Plan.  The foregoing option must be exercised by notice of Purchaser in writing to Sponsor as provided for in the Agreement and any riders thereto, by no later than five (5) days after the Outside Closing Date, otherwise Purchaser shall be deemed to have waived this option.",
+      "section_references": []
+    },
+    {
+      "comment": "Section 7.1: please add: Notwithstanding the foregoing, receipt by Sponsor’s attorneys: (i) not less than 10 days prior to closing, of a title report issued by the Title Company reflecting any defect in title not set forth in Schedule A; or (ii) a reasonable time prior to closing, of a title update or continuation reflecting any defect in title not set forth in Schedule A, shall be deemed timely written notice to Sponsor’s attorney of such defect.",
+      "section_references": [
+        "7.1"
+      ]
+    },
+    {
+      "comment": "Section 19: Punchlist items shall be repaired within 60 days after closing (buyer wants a timeline here specifically). Also, sponsor allows the buyer and buyer’s broker to inspect the unit during the final walk through. Section 21: delete the 1-year lease restriction completely for this unit. Please add: Notwithstanding the foregoing, Purchaser can freely list the Unit for lease with any broker or otherwise advertise, promote, or publicize the availability of the Unit for lease post-closing. For the avoidance of doubt, immediately following the closing of title to the Unit, Purchaser has the right to rent the Unit for lease in accordance with the rules and regulations as outlined in the Bylaws. Rider",
+      "section_references": []
+    },
+    {
+      "comment": "Section 34.3: delete it (no need to find another lender as the loan terms may change)",
+      "section_references": [
+        "34.3"
+      ]
+    },
+    {
+      "comment": "Rider section 34.3 - Regarding the mortgage Contin, there is missing language regarding the refund of the Deposit in the event of contract termination. Could you please add the following?",
+      "section_references": [
+        "34.3"
+      ]
+    },
+    {
+      "comment": "If Purchaser so elects to terminate this Agreement, Sponsor shall within ten (10) business days after receipt of notice of termination from Purchaser, return to Purchaser all sums deposited by Purchaser hereunder, together with interest earned thereon, if any, and upon making such payment, this Agreement shall be terminated and neither party hereto shall have any further rights, obligations or liabilities to or against the other party under this Agreement or the Plan.",
+      "section_references": []
+    }
+  ]
+}

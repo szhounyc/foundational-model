@@ -1,0 +1,90 @@
+services:
+  # Frontend React App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: contract-frontend
+    ports:
+      - "9000:9000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:9100
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - contract-review-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # Main Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: contract-backend
+    ports:
+      - "9100:9100"
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/database:/app/database
+    environment:
+      - PYTHONPATH=/app
+      - INFERENCE_SERVICE_URL=http://inference-service:9200
+      - DATABASE_PATH=/app/database/contracts.db
+      - UPLOAD_DIR=/app/uploads
+    depends_on:
+      inference-service:
+        condition: service_healthy
+    networks:
+      - contract-review-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # Model Inference Service
+  inference-service:
+    build:
+      context: ./inference-service
+      dockerfile: Dockerfile
+    container_name: contract-inference-service
+    ports:
+      - "9200:9200"
+    volumes:
+      - ./models:/app/models:ro
+      - ./dataset:/app/dataset:ro
+    environment:
+      - PYTHONPATH=/app
+      - TOKENIZERS_PARALLELISM=false
+      - FIREWORKS_API_KEY=${FIREWORKS_API_KEY}
+      - MODELS_DIR=/app/models
+    networks:
+      - contract-review-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+
+networks:
+  contract-review-network:
+    driver: bridge
+
+volumes:
+  model-cache:
+    driver: local
+  upload-storage:
+    driver: local
+  database-storage:
+    driver: local 
