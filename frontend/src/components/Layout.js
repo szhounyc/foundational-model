@@ -21,6 +21,8 @@ import {
   Description as ContractIcon,
   History as HistoryIcon,
   Gavel as LegalIcon,
+  Business as BusinessIcon,
+  Assignment as TemplateIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -41,6 +43,16 @@ const menuItems = [
     text: 'Review History',
     icon: <HistoryIcon />,
     path: '/review-history',
+  },
+  {
+    text: 'Law Firms',
+    icon: <BusinessIcon />,
+    path: '/law-firms',
+  },
+  {
+    text: 'Templates',
+    icon: <TemplateIcon />,
+    path: '/templates',
   },
 ];
 

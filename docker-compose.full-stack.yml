@@ -28,14 +28,15 @@ services:
   # Backend API Service
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
     container_name: contract-backend
     ports:
       - "9100:9100"
     volumes:
       - ./backend/uploads:/app/uploads
       - ./backend/database:/app/database
+      - ./data:/app/data
     environment:
       - PYTHONPATH=/app
       - INFERENCE_SERVICE_URL=http://inference-service:9200

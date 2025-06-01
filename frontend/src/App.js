@@ -8,6 +8,8 @@ import { QueryClient, QueryClientProvider } from 'react-query';
 import ContractReview from './pages/ContractReview';
 import ReviewHistory from './pages/ReviewHistory';
 import Dashboard from './pages/Dashboard';
+import LawFirms from './pages/LawFirms';
+import Templates from './pages/Templates';
 import Layout from './components/Layout';
 
 // Create theme
@@ -83,6 +85,8 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/contract-review" element={<ContractReview />} />
               <Route path="/review-history" element={<ReviewHistory />} />
+              <Route path="/law-firms" element={<LawFirms />} />
+              <Route path="/templates" element={<Templates />} />
             </Routes>
           </Layout>
         </Router>

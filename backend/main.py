@@ -1,12 +1,12 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import httpx
 import os
 import json
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel
 import sqlite3
 from contextlib import asynccontextmanager
@@ -14,6 +14,11 @@ import aiofiles
 import PyPDF2
 import io
 import logging
+import difflib
+import re
+from docx import Document
+from pathlib import Path
+import shutil
 
 # Configure logging
 logging.basicConfig(
@@ -51,6 +56,43 @@ class ModelInfo(BaseModel):
     status: str
     size_mb: float
     created_at: str
+
+# New models for contract comment feature
+class LawFirm(BaseModel):
+    id: str
+    name: str
+    keywords: List[str]
+    created_at: str
+
+class ContractTemplate(BaseModel):
+    id: str
+    law_firm_id: str
+    law_firm_name: str
+    template_type: str  # "main_contract", "rider", "legal_comments"
+    file_name: str
+    file_path: str
+    content: str
+    created_at: str
+
+class ContractCommentRequest(BaseModel):
+    contract_file_id: str
+    rider_file_id: Optional[str] = None
+    law_firm_id: Optional[str] = None
+
+class BatchContractCommentRequest(BaseModel):
+    contract_file_ids: List[str]
+    law_firm_id: Optional[str] = None
+
+class DocumentComparison(BaseModel):
+    id: str
+    contract_file_id: str
+    template_id: str
+    differences: List[dict]
+    created_at: str
+
+class LawFirmCreate(BaseModel):
+    name: str
+    keywords: List[str]
 
 # Database initialization
 def init_db():
@@ -93,7 +135,8 @@ def init_db():
             processed BOOLEAN DEFAULT FALSE,
             uploaded_at TEXT NOT NULL,
             size_bytes INTEGER,
-            extracted_text TEXT
+            extracted_text TEXT,
+            document_type TEXT DEFAULT NULL
         )
     ''')
     
@@ -112,8 +155,82 @@ def init_db():
         )
     ''')
     
+    # Contract comments table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS contract_comments (
+            id TEXT PRIMARY KEY,
+            contract_file_id TEXT NOT NULL,
+            law_firm_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            comments_result TEXT,
+            processing_time REAL,
+            FOREIGN KEY (contract_file_id) REFERENCES pdf_files (id),
+            FOREIGN KEY (law_firm_id) REFERENCES law_firms (id)
+        )
+    ''')
+    
+    # Law firms table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS law_firms (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            keywords TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    ''')
+    
+    # Contract templates table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS contract_templates (
+            id TEXT PRIMARY KEY,
+            law_firm_id TEXT NOT NULL,
+            law_firm_name TEXT NOT NULL,
+            template_type TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            content TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (law_firm_id) REFERENCES law_firms (id)
+        )
+    ''')
+    
+    # Document comparisons table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS document_comparisons (
+            id TEXT PRIMARY KEY,
+            contract_file_id TEXT NOT NULL,
+            template_id TEXT NOT NULL,
+            differences TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (contract_file_id) REFERENCES pdf_files (id),
+            FOREIGN KEY (template_id) REFERENCES contract_templates (id)
+        )
+    ''')
+    
+    # Add law_firm_id column to pdf_files table if it doesn't exist
+    cursor.execute("PRAGMA table_info(pdf_files)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'law_firm_id' not in columns:
+        cursor.execute('ALTER TABLE pdf_files ADD COLUMN law_firm_id TEXT')
+    if 'law_firm_name' not in columns:
+        cursor.execute('ALTER TABLE pdf_files ADD COLUMN law_firm_name TEXT')
+    
+    # Insert default law firm
+    cursor.execute('''
+        INSERT OR IGNORE INTO law_firms (id, name, keywords, created_at)
+        VALUES (?, ?, ?, ?)
+    ''', (
+        'law_firm_1',
+        'Marans Newman Tsolis & Nazinitsky LLC',
+        json.dumps(['Marans Newman Tsolis', 'MNTN', 'Marans Newman', 'Tsolis', 'Nazinitsky']),
+        datetime.now().isoformat()
+    ))
+    
     conn.commit()
     conn.close()
+    logger.info("✅ Database initialized")
 
 def extract_text_from_pdf(file_path: str) -> str:
     """Extract text from PDF file"""
@@ -142,15 +259,161 @@ def extract_text_from_pdf(file_path: str) -> str:
         logger.error(f"Error extracting text from PDF {file_path}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error extracting text from PDF: {str(e)}")
 
+def extract_text_from_docx(file_path: str) -> str:
+    """Extract text from DOCX file"""
+    logger.info(f"Starting DOCX text extraction for: {file_path}")
+    try:
+        doc = Document(file_path)
+        text = ""
+        paragraph_count = len(doc.paragraphs)
+        logger.info(f"DOCX has {paragraph_count} paragraphs")
+        
+        for paragraph_num, paragraph in enumerate(doc.paragraphs):
+            paragraph_text = paragraph.text
+            text += paragraph_text + "\n"
+            logger.debug(f"Extracted {len(paragraph_text)} characters from paragraph {paragraph_num + 1}")
+        
+        # Also extract text from tables
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    text += cell.text + " "
+                text += "\n"
+        
+        total_chars = len(text.strip())
+        logger.info(f"Successfully extracted {total_chars} characters from DOCX: {file_path}")
+        
+        # Log first 500 characters for debugging
+        preview_text = text.strip()[:500]
+        logger.info(f"DOCX content preview (first 500 chars): {preview_text}...")
+        
+        return text.strip()
+    except Exception as e:
+        logger.error(f"Error extracting text from DOCX {file_path}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error extracting text from DOCX: {str(e)}")
+
+def extract_text_from_file(file_path: str) -> str:
+    """Extract text from PDF or DOCX file based on extension"""
+    file_extension = os.path.splitext(file_path)[1].lower()
+    
+    if file_extension == '.pdf':
+        return extract_text_from_pdf(file_path)
+    elif file_extension == '.docx':
+        return extract_text_from_docx(file_path)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_extension}")
+
+def is_supported_file(filename: str) -> bool:
+    """Check if file type is supported (PDF or DOCX)"""
+    return filename.lower().endswith(('.pdf', '.docx'))
+
+def detect_law_firm(text: str) -> tuple:
+    """Detect law firm from contract text"""
+    logger.info("Starting law firm detection...")
+    
+    # Get all law firms from database
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name, keywords FROM law_firms')
+    law_firms = cursor.fetchall()
+    conn.close()
+    
+    text_lower = text.lower()
+    
+    for firm_id, firm_name, keywords_json in law_firms:
+        keywords = json.loads(keywords_json)
+        for keyword in keywords:
+            if keyword.lower() in text_lower:
+                logger.info(f"Law firm detected: {firm_name} (keyword: {keyword})")
+                return firm_id, firm_name
+    
+    logger.info("No law firm detected in contract text")
+    return None, None
+
+import difflib
+import re
+
+def compare_documents(doc1_text: str, doc2_text: str) -> List[dict]:
+    """Compare two documents and return differences"""
+    logger.info("Starting document comparison...")
+    
+    # Split documents into lines for comparison
+    doc1_lines = doc1_text.splitlines()
+    doc2_lines = doc2_text.splitlines()
+    
+    # Use difflib to get differences
+    differ = difflib.unified_diff(doc1_lines, doc2_lines, lineterm='')
+    differences = []
+    
+    line_num = 0
+    for line in differ:
+        if line.startswith('---') or line.startswith('+++') or line.startswith('@@'):
+            continue
+        
+        if line.startswith('-'):
+            differences.append({
+                'type': 'removed',
+                'line_number': line_num,
+                'content': line[1:],
+                'context': 'template'
+            })
+        elif line.startswith('+'):
+            differences.append({
+                'type': 'added',
+                'line_number': line_num,
+                'content': line[1:],
+                'context': 'contract'
+            })
+        
+        line_num += 1
+    
+    logger.info(f"Found {len(differences)} differences between documents")
+    return differences
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    init_db()
+    logger.info("🚀 Starting Contract Analysis Backend...")
+    
+    # Create necessary directories
+    os.makedirs("data", exist_ok=True)
+    os.makedirs("data/uploads", exist_ok=True)
     os.makedirs("data/pdfs", exist_ok=True)
-    os.makedirs("data/processed", exist_ok=True)
-    os.makedirs("models", exist_ok=True)
+    os.makedirs("data/templates", exist_ok=True)
+    os.makedirs("data/templates/purchase_agreement", exist_ok=True)
+    os.makedirs("data/templates/rider", exist_ok=True)
+    os.makedirs("data/templates/legal_comments", exist_ok=True)
+    logger.info("📁 Created necessary directories")
+    
+    # Initialize database
+    init_db()
+    logger.info("🗄️ Database initialized")
+    
+    # Auto-seed templates if database is empty
+    try:
+        from auto_seed_on_startup import auto_seed_templates
+        auto_seed_templates()
+    except Exception as e:
+        logger.error(f"❌ Auto-seeding failed: {e}")
+    
+    # Test inference service connection
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://inference-service:9200/health", timeout=5.0)
+            if response.status_code == 200:
+                logger.info("✅ Inference service is healthy")
+            else:
+                logger.warning(f"⚠️ Inference service returned status {response.status_code}")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not connect to inference service: {str(e)}")
+    
+    logger.info("✅ Backend startup complete")
+    
     yield
+    
     # Shutdown
+    logger.info("🛑 Shutting down Contract Analysis Backend...")
+    logger.info("✅ Backend shutdown complete")
 
 app = FastAPI(
     title="LLM Fine-tuning Platform API",
@@ -206,12 +469,12 @@ async def health_check():
     
     return {"status": "healthy", "services": services_status}
 
-# PDF Management Endpoints
+# Document Management Endpoints
 @app.post("/api/pdfs/upload")
-async def upload_pdf(file: UploadFile = File(...)):
-    """Upload a PDF file for processing"""
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+async def upload_document(file: UploadFile = File(...)):
+    """Upload a PDF or DOCX file for processing"""
+    if not is_supported_file(file.filename):
+        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are allowed")
     
     file_id = str(uuid.uuid4())
     file_path = f"data/pdfs/{file_id}_{file.filename}"
@@ -460,12 +723,12 @@ async def get_inference_models():
 # Contract Review Endpoints
 @app.post("/api/contracts/upload")
 async def upload_contract(file: UploadFile = File(...)):
-    """Upload a contract PDF file for review"""
+    """Upload a contract PDF or DOCX file for review"""
     logger.info(f"Starting contract upload for file: {file.filename}")
     
-    if not file.filename.endswith('.pdf'):
+    if not is_supported_file(file.filename):
         logger.error(f"Invalid file type uploaded: {file.filename}")
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are allowed")
     
     file_id = str(uuid.uuid4())
     file_path = f"data/pdfs/{file_id}_{file.filename}"
@@ -479,12 +742,19 @@ async def upload_contract(file: UploadFile = File(...)):
     
     logger.info(f"File saved successfully, size: {len(content)} bytes")
     
-    # Extract text from PDF
+    # Extract text from file (PDF or DOCX)
     try:
         logger.info(f"Starting text extraction for uploaded file: {file.filename}")
-        extracted_text = extract_text_from_pdf(file_path)
+        extracted_text = extract_text_from_file(file_path)
         text_length = len(extracted_text)
         logger.info(f"Text extraction successful. Extracted {text_length} characters")
+        
+        # Detect law firm from extracted text
+        law_firm_id, law_firm_name = detect_law_firm(extracted_text) if extracted_text else (None, None)
+        if law_firm_name:
+            logger.info(f"Law firm detected: {law_firm_name}")
+        else:
+            logger.info("No law firm detected in contract")
         
         # Log text content summary
         if extracted_text:
@@ -506,15 +776,16 @@ async def upload_contract(file: UploadFile = File(...)):
         # If text extraction fails, still save the file but mark as not processed
         extracted_text = None
         text_length = 0
+        law_firm_id, law_firm_name = None, None
 
     # Save to database
     logger.info(f"Saving file metadata to database")
     conn = sqlite3.connect('app.db')
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO pdf_files (id, filename, file_path, uploaded_at, size_bytes, extracted_text, processed)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (file_id, file.filename, file_path, datetime.now().isoformat(), len(content), extracted_text, extracted_text is not None))
+        INSERT INTO pdf_files (id, filename, file_path, uploaded_at, size_bytes, extracted_text, processed, law_firm_id, law_firm_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (file_id, file.filename, file_path, datetime.now().isoformat(), len(content), extracted_text, extracted_text is not None, law_firm_id, law_firm_name))
     conn.commit()
     conn.close()
     
@@ -525,30 +796,62 @@ async def upload_contract(file: UploadFile = File(...)):
         "filename": file.filename, 
         "status": "uploaded",
         "text_extracted": extracted_text is not None,
-        "text_length": text_length
+        "text_length": text_length,
+        "law_firm_id": law_firm_id,
+        "law_firm_name": law_firm_name or "N.A."
     }
 
 @app.get("/api/contracts/files")
-async def list_contract_files():
+async def get_contract_files():
     """Get all uploaded contract files"""
     conn = sqlite3.connect('app.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT id, filename, uploaded_at, size_bytes, extracted_text, processed FROM pdf_files ORDER BY uploaded_at DESC')
-    rows = cursor.fetchall()
+    cursor.execute('''
+        SELECT id, filename, file_path, processed, uploaded_at, 
+               size_bytes, extracted_text, document_type, law_firm_id, law_firm_name
+        FROM pdf_files 
+        ORDER BY uploaded_at DESC
+    ''')
+    files = cursor.fetchall()
     conn.close()
     
-    files = []
-    for row in rows:
-        files.append({
-            "id": row[0],
-            "filename": row[1],
-            "uploaded_at": row[2],
-            "size_bytes": row[3],
-            "text_extracted": row[4] is not None,
-            "text_length": len(row[4]) if row[4] else 0
-        })
+    return {
+        "files": [
+            {
+                "id": file[0],
+                "filename": file[1],
+                "file_path": file[2],
+                "processed": bool(file[3]),
+                "uploaded_at": file[4],
+                "size_bytes": file[5],
+                "text_extracted": bool(file[6]),
+                "text_length": len(file[6]) if file[6] else 0,
+                "document_type": file[7],
+                "law_firm_id": file[8],
+                "law_firm_name": file[9]
+            }
+            for file in files
+        ]
+    }
+
+@app.put("/api/contracts/files/{file_id}/document-type")
+async def update_document_type(file_id: str, document_type: str = Body(..., embed=True)):
+    """Update the document type for a contract file"""
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
     
-    return {"files": files}
+    # Check if file exists
+    cursor.execute('SELECT id FROM pdf_files WHERE id = ?', (file_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Contract file not found")
+    
+    # Update document type
+    cursor.execute('UPDATE pdf_files SET document_type = ? WHERE id = ?', (document_type, file_id))
+    conn.commit()
+    conn.close()
+    
+    return {"message": "Document type updated successfully", "file_id": file_id, "document_type": document_type}
 
 @app.post("/api/contracts/review")
 async def review_contracts(request: ContractReviewRequest):
@@ -730,6 +1033,660 @@ async def get_contract_review(review_id: str):
         "review_result": review_result,
         "processing_time": row[8]
     }
+
+# Law Firm Management Endpoints
+@app.get("/api/law-firms")
+async def get_law_firms():
+    """Get all law firms"""
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name, keywords, created_at FROM law_firms ORDER BY name')
+    rows = cursor.fetchall()
+    conn.close()
+    
+    law_firms = []
+    for row in rows:
+        law_firms.append({
+            "id": row[0],
+            "name": row[1],
+            "keywords": json.loads(row[2]),
+            "created_at": row[3]
+        })
+    
+    return {"law_firms": law_firms}
+
+@app.post("/api/law-firms")
+async def create_law_firm(law_firm: LawFirmCreate):
+    """Create a new law firm"""
+    law_firm_id = str(uuid.uuid4())
+    
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO law_firms (id, name, keywords, created_at)
+            VALUES (?, ?, ?, ?)
+        ''', (law_firm_id, law_firm.name, json.dumps(law_firm.keywords), datetime.now().isoformat()))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Law firm with this name already exists")
+    finally:
+        conn.close()
+    
+    return {"id": law_firm_id, "name": law_firm.name, "keywords": law_firm.keywords, "status": "created"}
+
+# Template Management Endpoints
+@app.get("/api/templates")
+async def get_templates(law_firm_id: Optional[str] = None, template_type: Optional[str] = None):
+    """Get contract templates"""
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    
+    query = 'SELECT id, law_firm_id, law_firm_name, template_type, file_name, file_path, created_at FROM contract_templates'
+    params = []
+    conditions = []
+    
+    if law_firm_id:
+        conditions.append('law_firm_id = ?')
+        params.append(law_firm_id)
+    
+    if template_type:
+        conditions.append('template_type = ?')
+        params.append(template_type)
+    
+    if conditions:
+        query += ' WHERE ' + ' AND '.join(conditions)
+    
+    query += ' ORDER BY law_firm_name, template_type'
+    
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    templates = []
+    for row in rows:
+        # Get file size
+        file_size = 0
+        try:
+            file_path = Path(row[5])
+            if file_path.exists():
+                file_size = file_path.stat().st_size
+        except Exception:
+            pass
+            
+        templates.append({
+            "id": row[0],
+            "law_firm_id": row[1],
+            "law_firm_name": row[2],
+            "template_type": row[3],
+            "filename": row[4],  # Changed from file_name to filename for frontend consistency
+            "file_path": row[5],
+            "file_size": file_size,
+            "created_at": row[6]
+        })
+    
+    return {"templates": templates}
+
+@app.post("/api/templates/upload")
+async def upload_template(
+    law_firm_id: str,
+    template_type: str,
+    file: UploadFile = File(...)
+):
+    """Upload a contract template (PDF or DOCX)"""
+    logger.info(f"Template upload request: law_firm_id={law_firm_id}, template_type={template_type}, filename={file.filename}")
+    
+    if not is_supported_file(file.filename):
+        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are allowed")
+    
+    if template_type not in ['purchase_agreement', 'rider', 'legal_comments']:
+        raise HTTPException(status_code=400, detail="Invalid template type")
+    
+    # Get law firm name
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT name FROM law_firms WHERE id = ?', (law_firm_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Law firm not found")
+    law_firm_name = row[0]
+    
+    template_id = str(uuid.uuid4())
+    
+    # Create directory structure if it doesn't exist
+    template_dir = f"data/templates/{template_type}"
+    os.makedirs(template_dir, exist_ok=True)
+    
+    file_path = f"{template_dir}/{template_id}_{file.filename}"
+    
+    # Save file
+    try:
+        async with aiofiles.open(file_path, 'wb') as f:
+            content = await file.read()
+            await f.write(content)
+        logger.info(f"Template file saved to: {file_path}")
+    except Exception as e:
+        logger.error(f"Failed to save template file: {str(e)}")
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    
+    # Extract text content
+    extracted_text = ""
+    try:
+        extracted_text = extract_text_from_file(file_path)
+        logger.info(f"Extracted {len(extracted_text)} characters from template")
+    except Exception as e:
+        logger.warning(f"Could not extract text from template: {str(e)}")
+    
+    # Save to database
+    try:
+        cursor.execute('''
+            INSERT INTO contract_templates (id, law_firm_id, law_firm_name, template_type, file_name, file_path, content, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (template_id, law_firm_id, law_firm_name, template_type, file.filename, file_path, extracted_text, datetime.now().isoformat()))
+        conn.commit()
+        logger.info(f"Template saved to database with ID: {template_id}")
+    except Exception as e:
+        logger.error(f"Failed to save template to database: {str(e)}")
+        conn.close()
+        # Clean up the file if database save failed
+        try:
+            os.remove(file_path)
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=f"Failed to save to database: {str(e)}")
+    finally:
+        conn.close()
+    
+    return {
+        "id": template_id,
+        "law_firm_id": law_firm_id,
+        "law_firm_name": law_firm_name,
+        "template_type": template_type,
+        "filename": file.filename,
+        "status": "uploaded"
+    }
+
+@app.get("/api/templates/{template_id}/content")
+async def get_template_content(template_id: str):
+    """Get template content"""
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT content, template_type, law_firm_name FROM contract_templates WHERE id = ?', (template_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    return {
+        "template_id": template_id,
+        "content": row[0],
+        "template_type": row[1],
+        "law_firm_name": row[2]
+    }
+
+@app.get("/api/templates/{template_id}/download")
+async def download_template(template_id: str):
+    """Download template file"""
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT file_path, file_name FROM contract_templates WHERE id = ?', (template_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    file_path, file_name = row
+    full_path = Path(file_path)
+    
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Template file not found on disk")
+    
+    return FileResponse(
+        path=str(full_path),
+        filename=file_name,
+        media_type='application/octet-stream'
+    )
+
+@app.delete("/api/templates/{template_id}")
+async def delete_template(template_id: str):
+    """Delete a template"""
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    
+    # Get template info before deletion
+    cursor.execute('SELECT file_path, file_name FROM contract_templates WHERE id = ?', (template_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    file_path, file_name = row
+    
+    # Delete from database
+    cursor.execute('DELETE FROM contract_templates WHERE id = ?', (template_id,))
+    deleted_rows = cursor.rowcount
+    conn.commit()
+    conn.close()
+    
+    if deleted_rows > 0:
+        # Try to delete file from disk
+        try:
+            full_path = Path(file_path)
+            if full_path.exists():
+                full_path.unlink()
+                logger.info(f"Deleted template file: {file_path}")
+        except Exception as e:
+            logger.warning(f"Could not delete template file {file_path}: {e}")
+        
+        return {"message": f"Template '{file_name}' deleted successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+# Contract Comment Endpoints
+@app.post("/api/test-endpoint")
+async def test_endpoint():
+    """Test endpoint to verify routing works"""
+    return {"test": "POST endpoint working", "timestamp": datetime.now().isoformat()}
+
+@app.post("/api/contracts/comment/batch")
+async def generate_batch_contract_comments(request: BatchContractCommentRequest):
+    """Generate AI comments for multiple contracts using law firm templates - one overall comment with individual diffs"""
+    comment_id = str(uuid.uuid4())
+    start_time = datetime.now()
+    
+    logger.info(f"Starting batch contract comment generation for {len(request.contract_file_ids)} contracts")
+    
+    # Save comment request to database
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    
+    # Use the first contract file ID as the primary reference for the comment record
+    primary_contract_id = request.contract_file_ids[0]
+    
+    cursor.execute('''
+        INSERT INTO contract_comments (id, contract_file_id, law_firm_id, status, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (comment_id, primary_contract_id, request.law_firm_id, "processing", start_time.isoformat()))
+    conn.commit()
+    
+    try:
+        # Get law firm info
+        cursor.execute('SELECT name FROM law_firms WHERE id = ?', (request.law_firm_id,))
+        law_firm_row = cursor.fetchone()
+        if not law_firm_row:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Law firm not found")
+        
+        law_firm_name = law_firm_row[0]
+        
+        # Get templates for this law firm
+        cursor.execute('''
+            SELECT id, template_type, file_name, content 
+            FROM contract_templates 
+            WHERE law_firm_id = ?
+        ''', (request.law_firm_id,))
+        template_rows = cursor.fetchall()
+        
+        if not template_rows:
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"No templates found for law firm: {law_firm_name}")
+        
+        # Parse legal comments from templates (only once for all documents)
+        comments = []
+        legal_comments_content = None
+        
+        for template_row in template_rows:
+            template_id, template_type, template_filename, template_content = template_row
+            if template_type == 'legal_comments':
+                legal_comments_content = template_content
+                break
+        
+        if legal_comments_content:
+            logger.info(f"Parsing legal comments content, length: {len(legal_comments_content)}")
+            comments = parse_legal_comments(legal_comments_content)
+            logger.info(f"Parsed {len(comments)} comments")
+        
+        # Process each contract file individually for comparisons
+        all_comparisons = []
+        contract_files_info = []
+        
+        for contract_file_id in request.contract_file_ids:
+            # Get contract file info
+            cursor.execute('SELECT filename, extracted_text, document_type FROM pdf_files WHERE id = ?', (contract_file_id,))
+            contract_row = cursor.fetchone()
+            if not contract_row:
+                logger.warning(f"Contract file not found: {contract_file_id}")
+                continue
+            
+            contract_filename, contract_text, contract_document_type = contract_row
+            contract_files_info.append({
+                "file_id": contract_file_id,
+                "filename": contract_filename,
+                "document_type": contract_document_type
+            })
+            
+            # Generate template comparisons based on document type
+            contract_comparisons = []
+            
+            # If contract has a document type, only compare with matching template type
+            if contract_document_type:
+                logger.info(f"Contract {contract_filename} document type: {contract_document_type}")
+                matching_templates = [t for t in template_rows if t[1] == contract_document_type]
+                if not matching_templates:
+                    logger.warning(f"No templates found for document type: {contract_document_type}")
+            else:
+                # If no document type specified, compare with all templates except legal_comments
+                matching_templates = [t for t in template_rows if t[1] != 'legal_comments']
+            
+            for template_row in matching_templates:
+                template_id, template_type, template_filename, template_content = template_row
+                
+                logger.info(f"Starting document comparison for {contract_filename}...")
+                differences = compare_documents(template_content, contract_text)
+                logger.info(f"Found {len(differences)} differences between {contract_filename} and {template_filename}")
+                
+                contract_comparisons.append({
+                    "comparison_id": str(uuid.uuid4()),
+                    "template_id": template_id,
+                    "template_type": template_type,
+                    "template_filename": template_filename,
+                    "differences": differences
+                })
+            
+            all_comparisons.append({
+                "contract_file_id": contract_file_id,
+                "contract_filename": contract_filename,
+                "document_type": contract_document_type,
+                "comparisons": contract_comparisons
+            })
+        
+        end_time = datetime.now()
+        processing_time = (end_time - start_time).total_seconds()
+        
+        result = {
+            "comment_id": comment_id,
+            "contract_files": contract_files_info,
+            "law_firm_id": request.law_firm_id,
+            "law_firm_name": law_firm_name,
+            "comments": comments,  # Single set of legal comments for all documents
+            "document_comparisons": all_comparisons,  # Individual comparisons for each document
+            "template_comparison": None  # Legacy field for backward compatibility
+        }
+        
+        # Update database with results
+        cursor.execute('''
+            UPDATE contract_comments 
+            SET status = ?, completed_at = ?, comments_result = ?, processing_time = ?
+            WHERE id = ?
+        ''', ("completed", end_time.isoformat(), json.dumps(result), processing_time, comment_id))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Batch contract comment generation completed for {len(request.contract_file_ids)} files")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in batch contract comment generation: {str(e)}")
+        
+        # Update database with error
+        cursor.execute('''
+            UPDATE contract_comments 
+            SET status = ?, completed_at = ?
+            WHERE id = ?
+        ''', ("failed", datetime.now().isoformat(), comment_id))
+        conn.commit()
+        conn.close()
+        
+        raise HTTPException(status_code=500, detail=f"Batch comment generation failed: {str(e)}")
+
+@app.post("/api/contracts/comment")
+async def generate_contract_comments(request: ContractCommentRequest):
+    """Generate AI comments for a contract using law firm templates"""
+    comment_id = str(uuid.uuid4())
+    start_time = datetime.now()
+    
+    logger.info(f"Starting contract comment generation for contract: {request.contract_file_id}")
+    
+    # Save comment request to database
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO contract_comments (id, contract_file_id, law_firm_id, status, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (comment_id, request.contract_file_id, request.law_firm_id, "processing", start_time.isoformat()))
+    conn.commit()
+    
+    try:
+        # Get contract file info
+        cursor.execute('SELECT filename, extracted_text, document_type FROM pdf_files WHERE id = ?', (request.contract_file_id,))
+        contract_row = cursor.fetchone()
+        if not contract_row:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Contract file not found")
+        
+        contract_filename, contract_text, contract_document_type = contract_row
+        
+        # Get law firm info
+        cursor.execute('SELECT name FROM law_firms WHERE id = ?', (request.law_firm_id,))
+        law_firm_row = cursor.fetchone()
+        if not law_firm_row:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Law firm not found")
+        
+        law_firm_name = law_firm_row[0]
+        
+        # Get templates for this law firm
+        cursor.execute('''
+            SELECT id, template_type, file_name, content 
+            FROM contract_templates 
+            WHERE law_firm_id = ?
+        ''', (request.law_firm_id,))
+        template_rows = cursor.fetchall()
+        
+        if not template_rows:
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"No templates found for law firm: {law_firm_name}")
+        
+        # Parse legal comments from templates
+        comments = []
+        legal_comments_content = None
+        
+        for template_row in template_rows:
+            template_id, template_type, template_filename, template_content = template_row
+            if template_type == 'legal_comments':
+                legal_comments_content = template_content
+                break
+        
+        if legal_comments_content:
+            logger.info(f"Parsing legal comments content, length: {len(legal_comments_content)}")
+            comments = parse_legal_comments(legal_comments_content)
+            logger.info(f"Parsed {len(comments)} comments")
+        
+        # Generate template comparisons based on document type
+        comparisons = []
+        
+        # If contract has a document type, only compare with matching template type
+        if contract_document_type:
+            logger.info(f"Contract document type: {contract_document_type}")
+            matching_templates = [t for t in template_rows if t[1] == contract_document_type]
+            if not matching_templates:
+                logger.warning(f"No templates found for document type: {contract_document_type}")
+        else:
+            # If no document type specified, compare with all templates except legal_comments
+            matching_templates = [t for t in template_rows if t[1] != 'legal_comments']
+        
+        for template_row in matching_templates:
+            template_id, template_type, template_filename, template_content = template_row
+            
+            logger.info(f"Starting document comparison...")
+            differences = compare_documents(template_content, contract_text)
+            logger.info(f"Found {len(differences)} differences between documents")
+            
+            comparisons.append({
+                "comparison_id": str(uuid.uuid4()),
+                "template_id": template_id,
+                "template_type": template_type,
+                "template_filename": template_filename,
+                "differences": differences
+            })
+        
+        end_time = datetime.now()
+        processing_time = (end_time - start_time).total_seconds()
+        
+        result = {
+            "comment_id": comment_id,
+            "contract_file_id": request.contract_file_id,
+            "contract_filename": contract_filename,
+            "law_firm_id": request.law_firm_id,
+            "law_firm_name": law_firm_name,
+            "comparisons": comparisons,
+            "comments": comments,
+            "template_comparison": None  # Legacy field for backward compatibility
+        }
+        
+        # Update database with results
+        cursor.execute('''
+            UPDATE contract_comments 
+            SET status = ?, completed_at = ?, comments_result = ?, processing_time = ?
+            WHERE id = ?
+        ''', ("completed", end_time.isoformat(), json.dumps(result), processing_time, comment_id))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Contract comment generation completed for {contract_filename}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in contract comment generation: {str(e)}")
+        
+        # Update database with error
+        cursor.execute('''
+            UPDATE contract_comments 
+            SET status = ?, completed_at = ?
+            WHERE id = ?
+        ''', ("failed", datetime.now().isoformat(), comment_id))
+        conn.commit()
+        conn.close()
+        
+        raise HTTPException(status_code=500, detail=f"Comment generation failed: {str(e)}")
+
+@app.get("/api/contracts/comments")
+async def get_contract_comments():
+    """Get all contract comment history"""
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT cc.*, pf.filename, lf.name as law_firm_name 
+        FROM contract_comments cc
+        LEFT JOIN pdf_files pf ON cc.contract_file_id = pf.id
+        LEFT JOIN law_firms lf ON cc.law_firm_id = lf.id
+        ORDER BY cc.created_at DESC
+    ''')
+    rows = cursor.fetchall()
+    conn.close()
+    
+    comments = []
+    for row in rows:
+        comments_result = json.loads(row[6]) if row[6] else None
+        comments.append({
+            "id": row[0],
+            "contract_file_id": row[1],
+            "law_firm_id": row[2],
+            "status": row[3],
+            "created_at": row[4],
+            "completed_at": row[5],
+            "comments_result": comments_result,
+            "processing_time": row[7],
+            "contract_filename": row[8],
+            "law_firm_name": row[9]
+        })
+    
+    return {"comments": comments}
+
+@app.get("/api/contracts/comments/{comment_id}")
+async def get_contract_comment(comment_id: str):
+    """Get specific contract comment details"""
+    conn = sqlite3.connect('app.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT cc.*, pf.filename, lf.name as law_firm_name 
+        FROM contract_comments cc
+        LEFT JOIN pdf_files pf ON cc.contract_file_id = pf.id
+        LEFT JOIN law_firms lf ON cc.law_firm_id = lf.id
+        WHERE cc.id = ?
+    ''', (comment_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Contract comment not found")
+    
+    comments_result = json.loads(row[6]) if row[6] else None
+    return {
+        "id": row[0],
+        "contract_file_id": row[1],
+        "law_firm_id": row[2],
+        "status": row[3],
+        "created_at": row[4],
+        "completed_at": row[5],
+        "comments_result": comments_result,
+        "processing_time": row[7],
+        "contract_filename": row[8],
+        "law_firm_name": row[9]
+    }
+
+def parse_legal_comments(text: str) -> List[Dict]:
+    """Parse legal comments from template content into structured comments"""
+    logger.info(f"Starting to parse legal comments, text length: {len(text)}")
+    comments = []
+    
+    # Split into paragraphs and clean
+    paragraphs = [p.strip() for p in text.split('\n') if p.strip() and len(p.strip()) > 10]
+    logger.info(f"Found {len(paragraphs)} paragraphs after filtering")
+    
+    section_ref_pattern = r'(\d+\.\d+(?:\.\d+)?)'
+    
+    for i, paragraph in enumerate(paragraphs):
+        # Skip headers, footers, and very short content
+        if len(paragraph) < 30:
+            logger.debug(f"Skipping paragraph {i}, too short: {len(paragraph)} chars")
+            continue
+            
+        # Find section references in this paragraph
+        section_refs = re.findall(section_ref_pattern, paragraph)
+        
+        # Clean the comment text
+        clean_comment = re.sub(r'\s+', ' ', paragraph).strip()
+        
+        # Determine severity based on keywords
+        severity = "medium"
+        if any(word in clean_comment.lower() for word in ["critical", "urgent", "must", "required", "violation"]):
+            severity = "high"
+        elif any(word in clean_comment.lower() for word in ["suggest", "recommend", "consider", "minor"]):
+            severity = "low"
+        
+        # Extract section name from section references or use generic
+        section = f"Section {section_refs[0]}" if section_refs else "General Comment"
+        
+        comment_obj = {
+            "comment": clean_comment,
+            "section": section,
+            "severity": severity,
+            "suggestion": None  # Could be enhanced to extract suggestions
+        }
+        comments.append(comment_obj)
+        logger.debug(f"Added comment {len(comments)}: {section} - {severity}")
+    
+    logger.info(f"Finished parsing, returning {len(comments)} comments")
+    return comments
 
 if __name__ == "__main__":
     import uvicorn
