@@ -9,11 +9,14 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy backend application code
+COPY backend/ .
+
+# Copy scripts directory and other necessary files
+COPY scripts/ ./scripts/
 
 # Create necessary directories for contract review system
 RUN mkdir -p uploads database data/pdfs data/processed models

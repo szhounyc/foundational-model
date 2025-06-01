@@ -39,7 +39,7 @@ const PDFUpload = () => {
   const [previewDialog, setPreviewDialog] = useState({ open: false, content: null });
   const queryClient = useQueryClient();
 
-  // Fetch uploaded PDFs
+  // Fetch uploaded documents
   const { data: pdfs = [], isLoading } = useQuery({
     queryKey: ['pdfs'],
     queryFn: async () => {
@@ -148,22 +148,22 @@ const PDFUpload = () => {
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
-        PDF Upload & Processing
+        Document Upload & Processing
       </Typography>
       
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Upload PDF files to extract text for model training. Files will be processed automatically.
+        Upload PDF or DOCX files to extract text for model training. Files will be processed automatically.
       </Typography>
 
       {/* Upload Section */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
-          Upload New PDFs
+          Upload New Documents
         </Typography>
         
         <Box sx={{ mb: 2 }}>
           <input
-            accept=".pdf"
+            accept=".pdf,.docx"
             style={{ display: 'none' }}
             id="pdf-upload"
             multiple
@@ -177,7 +177,7 @@ const PDFUpload = () => {
               startIcon={<CloudUpload />}
               sx={{ mr: 2 }}
             >
-              Select PDF Files
+              Select PDF or DOCX Files
             </Button>
           </label>
           
@@ -233,17 +233,17 @@ const PDFUpload = () => {
         )}
       </Paper>
 
-      {/* Uploaded PDFs Section */}
+      {/* Uploaded Documents Section */}
       <Paper sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom>
-          Uploaded PDFs ({pdfs.length})
+          Uploaded Documents ({pdfs.length})
         </Typography>
 
         {isLoading ? (
           <LinearProgress />
         ) : pdfs.length === 0 ? (
           <Alert severity="info">
-            No PDFs uploaded yet. Upload some PDFs to get started!
+            No documents uploaded yet. Upload some PDF or DOCX files to get started!
           </Alert>
         ) : (
           <Grid container spacing={2}>
@@ -322,7 +322,7 @@ const PDFUpload = () => {
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle>PDF Preview</DialogTitle>
+        <DialogTitle>Document Preview</DialogTitle>
         <DialogContent>
           {previewDialog.content && (
             <Box>

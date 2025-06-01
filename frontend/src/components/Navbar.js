@@ -14,6 +14,9 @@ import {
   ModelTraining as TrainingIcon,
   Psychology as InferenceIcon,
   Storage as ModelsIcon,
+  Business as LawFirmsIcon,
+  Description as TemplatesIcon,
+  Comment as CommentsIcon,
 } from '@mui/icons-material';
 
 const Navbar = () => {
@@ -21,18 +24,19 @@ const Navbar = () => {
   const location = useLocation();
 
   const navItems = [
-    { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
-    { path: '/upload', label: 'Upload PDFs', icon: <UploadIcon /> },
-    { path: '/training', label: 'Training', icon: <TrainingIcon /> },
-    { path: '/inference', label: 'Inference', icon: <InferenceIcon /> },
-    { path: '/models', label: 'Models', icon: <ModelsIcon /> },
+    { path: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
+    { path: '/contract-review', label: 'Contract Review', icon: <UploadIcon /> },
+    { path: '/review-history', label: 'Review History', icon: <TrainingIcon /> },
+    { path: '/law-firms', label: 'Law Firms', icon: <LawFirmsIcon /> },
+    { path: '/templates', label: 'Templates', icon: <TemplatesIcon /> },
+    { path: '/contract-comments', label: 'Comments', icon: <CommentsIcon /> },
   ];
 
   return (
     <AppBar position="static" elevation={0} sx={{ borderBottom: '1px solid #e0e0e0' }}>
       <Toolbar>
         <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 700 }}>
-          🤖 LLM Fine-tuning Platform
+          📋 Contract Review Platform
         </Typography>
         
         <Box sx={{ display: 'flex', gap: 1 }}>

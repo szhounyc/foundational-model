@@ -22,12 +22,13 @@ import {
   CheckCircle as CheckIcon,
   Schedule as ScheduleIcon,
   CloudUpload as UploadIcon,
+  SmartToy as AIIcon,
 } from '@mui/icons-material';
 import { useQuery } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-const API_BASE = '';
+const API_BASE = process.env.REACT_APP_API_URL || '';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -37,6 +38,18 @@ function Dashboard() {
     'recent-reviews',
     async () => {
       const response = await axios.get(`${API_BASE}/api/contracts/reviews`);
+      return response.data;
+    },
+    {
+      refetchInterval: 30000,
+    }
+  );
+
+  // Get recent comments
+  const { data: commentsData, isLoading: commentsLoading } = useQuery(
+    'recent-comments',
+    async () => {
+      const response = await axios.get(`${API_BASE}/api/contracts/comments`);
       return response.data;
     },
     {
@@ -56,9 +69,18 @@ function Dashboard() {
     }
   );
 
-  const recentReviews = reviewsData?.reviews?.slice(0, 5) || [];
+  const recentReviews = reviewsData?.reviews?.slice(0, 3) || [];
+  const recentComments = (commentsData?.comments || (Array.isArray(commentsData) ? commentsData : [])).slice(0, 3) || [];
   const totalReviews = reviewsData?.reviews?.length || 0;
+  const totalComments = commentsData?.comments?.length || (Array.isArray(commentsData) ? commentsData.length : 0) || 0;
   const completedReviews = reviewsData?.reviews?.filter(r => r.status === 'completed')?.length || 0;
+  const completedComments = (commentsData?.comments || (Array.isArray(commentsData) ? commentsData : [])).filter(c => c.status === 'completed')?.length || 0;
+
+  // Combine and sort recent activity
+  const recentActivity = [
+    ...recentReviews.map(review => ({ ...review, type: 'review' })),
+    ...recentComments.map(comment => ({ ...comment, type: 'comment' }))
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 3);
 
   const stats = [
     {
@@ -68,14 +90,14 @@ function Dashboard() {
       color: 'primary',
     },
     {
-      title: 'Completed',
-      value: completedReviews,
-      icon: <CheckIcon />,
-      color: 'success',
+      title: 'AI Comments',
+      value: totalComments,
+      icon: <AIIcon />,
+      color: 'secondary',
     },
     {
       title: 'Success Rate',
-      value: totalReviews > 0 ? `${Math.round((completedReviews / totalReviews) * 100)}%` : '0%',
+      value: (totalReviews + totalComments) > 0 ? `${Math.round(((completedReviews + completedComments) / (totalReviews + totalComments)) * 100)}%` : '0%',
       icon: <TrendIcon />,
       color: 'info',
     },
@@ -107,6 +129,32 @@ function Dashboard() {
         return 'error';
       default:
         return 'default';
+    }
+  };
+
+  const getActivityIcon = (type) => {
+    return type === 'review' ? <DocumentIcon color="primary" /> : <AIIcon color="secondary" />;
+  };
+
+  const getActivityTitle = (item) => {
+    if (item.type === 'review') {
+      return `Review #${item.id}`;
+    } else {
+      // Check if it's a batch comment
+      const commentsResult = item.comments_result;
+      const hasNewFormat = commentsResult && (commentsResult.comments || commentsResult.document_comparisons);
+      if (hasNewFormat && commentsResult.contract_files) {
+        return `AI Comments (${commentsResult.contract_files.length} files)`;
+      }
+      return `AI Comments - ${item.contract_filename || 'Contract'}`;
+    }
+  };
+
+  const getActivitySubtitle = (item) => {
+    if (item.type === 'review') {
+      return `${formatDate(item.created_at)} • ${item.review_type} • ${item.model_id}`;
+    } else {
+      return `${formatDate(item.created_at)} • ${item.law_firm_name || 'Unknown Firm'}`;
     }
   };
 
@@ -224,26 +272,26 @@ function Dashboard() {
           </Card>
         </Grid>
 
-        {/* Recent Reviews */}
+        {/* Recent Activity */}
         <Grid item xs={12} md={8}>
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Recent Reviews
+                Recent Activity (Last 3)
               </Typography>
 
-              {reviewsLoading ? (
+              {(reviewsLoading || commentsLoading) ? (
                 <Box sx={{ mt: 2 }}>
                   <LinearProgress />
                   <Typography variant="body2" sx={{ mt: 1 }}>
-                    Loading recent reviews...
+                    Loading recent activity...
                   </Typography>
                 </Box>
-              ) : recentReviews.length > 0 ? (
+              ) : recentActivity.length > 0 ? (
                 <List>
-                  {recentReviews.map((review) => (
+                  {recentActivity.map((item) => (
                     <ListItem
-                      key={review.id}
+                      key={`${item.type}-${item.id}`}
                       sx={{
                         border: 1,
                         borderColor: 'grey.200',
@@ -252,35 +300,46 @@ function Dashboard() {
                       }}
                     >
                       <ListItemIcon>
-                        <DocumentIcon color="primary" />
+                        {getActivityIcon(item.type)}
                       </ListItemIcon>
                       <ListItemText
                         primary={
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Typography variant="subtitle2">
-                              Review #{review.id}
+                              {getActivityTitle(item)}
                             </Typography>
                             <Chip
                               size="small"
-                              label={review.status}
-                              color={getStatusColor(review.status)}
+                              label={item.status}
+                              color={getStatusColor(item.status)}
+                            />
+                            <Chip
+                              size="small"
+                              label={item.type === 'review' ? 'Review' : 'AI Comment'}
+                              variant="outlined"
+                              color={item.type === 'review' ? 'primary' : 'secondary'}
                             />
                           </Box>
                         }
                         secondary={
                           <Box sx={{ mt: 0.5 }}>
                             <Typography variant="caption" color="text.secondary">
-                              {formatDate(review.created_at)} • {review.review_type} • {review.model_id}
+                              {getActivitySubtitle(item)}
                             </Typography>
-                            {review.contract_files?.length > 0 && (
+                            {item.type === 'review' && item.contract_files?.length > 0 && (
                               <Typography variant="caption" sx={{ display: 'block' }}>
-                                {review.contract_files.length} file(s) reviewed
+                                {item.contract_files.length} file(s) reviewed
+                              </Typography>
+                            )}
+                            {item.type === 'comment' && item.processing_time && (
+                              <Typography variant="caption" sx={{ display: 'block' }}>
+                                Processing time: {parseFloat(item.processing_time).toFixed(2)}s
                               </Typography>
                             )}
                           </Box>
                         }
                       />
-                      {review.status === 'processing' && (
+                      {item.status === 'processing' && (
                         <Box sx={{ ml: 2 }}>
                           <ScheduleIcon color="warning" />
                         </Box>
@@ -292,7 +351,7 @@ function Dashboard() {
                 <Paper sx={{ p: 3, textAlign: 'center', backgroundColor: 'grey.50' }}>
                   <DocumentIcon sx={{ fontSize: 48, color: 'grey.400', mb: 2 }} />
                   <Typography variant="h6" color="text.secondary" gutterBottom>
-                    No Reviews Yet
+                    No Activity Yet
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     Upload your first contract to get started with AI-powered reviews
@@ -307,13 +366,13 @@ function Dashboard() {
                 </Paper>
               )}
 
-              {recentReviews.length > 0 && (
+              {recentActivity.length > 0 && (
                 <Box sx={{ mt: 2, textAlign: 'center' }}>
                   <Button
                     variant="text"
                     onClick={() => navigate('/review-history')}
                   >
-                    View All Reviews
+                    View All Activity
                   </Button>
                 </Box>
               )}
