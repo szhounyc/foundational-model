@@ -30,8 +30,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  ToggleButton,
-  ToggleButtonGroup,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -47,18 +45,17 @@ import {
   Warning as WarningIcon,
   Info as InfoIcon,
   Assignment as TemplateIcon,
-  ViewList as ListViewIcon,
-  ViewModule as CompactViewIcon,
   Compare as CompareIcon,
   Close as CloseIcon,
   Category as CategoryIcon,
   Save as SaveIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { useMutation, useQuery } from 'react-query';
 import axios from 'axios';
 
-const API_BASE = process.env.REACT_APP_API_URL || '';
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:9100';
 
 const COMMENT_SEVERITY_COLORS = {
   'high': 'error',
@@ -226,7 +223,6 @@ function ContractReview() {
   const [expandedPanel, setExpandedPanel] = useState(false);
   
   // New state for view toggles
-  const [commentsViewMode, setCommentsViewMode] = useState('list'); // 'list' or 'compact'
   const [diffViewOpen, setDiffViewOpen] = useState(false);
   const [selectedComparison, setSelectedComparison] = useState(null);
   const [fileDocumentTypes, setFileDocumentTypes] = useState({}); // New state for document types
@@ -257,7 +253,7 @@ function ContractReview() {
   const { data: modelsData } = useQuery(
     'models',
     async () => {
-      const response = await axios.get(`${API_BASE}/api/models`);
+      const response = await axios.get(`${API_BASE}/api/inference/models`);
       return response.data;
     }
   );
@@ -463,6 +459,26 @@ function ContractReview() {
   };
 
   const lawFirms = lawFirmsData?.law_firms || [];
+
+  // Handle template download
+  const handleDownloadTemplate = async (templateId, filename) => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/templates/${templateId}/download`, {
+        responseType: 'blob'
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to download template:', error);
+    }
+  };
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
@@ -944,85 +960,51 @@ function ContractReview() {
                               {/* Overall Comments Section (shown once) */}
                               {result.comments && result.comments.length > 0 && (
                                 <Box sx={{ mb: 4 }}>
-                                  <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                                    <CommentIcon sx={{ mr: 1 }} />
-                                    Legal Comments & Analysis
-                                  </Typography>
-                                  
-                                  {/* View Mode Toggle */}
-                                  <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                                    <ToggleButtonGroup
-                                      value={commentsViewMode}
-                                      exclusive
-                                      onChange={(event, newMode) => {
-                                        if (newMode !== null) {
-                                          setCommentsViewMode(newMode);
-                                        }
-                                      }}
-                                      size="small"
-                                    >
-                                      <ToggleButton value="list">
-                                        <ListViewIcon sx={{ mr: 1 }} />
-                                        List View
-                                      </ToggleButton>
-                                      <ToggleButton value="compact">
-                                        <CompactViewIcon sx={{ mr: 1 }} />
-                                        Compact View
-                                      </ToggleButton>
-                                    </ToggleButtonGroup>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                    <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center' }}>
+                                      <CommentIcon sx={{ mr: 1 }} />
+                                      Legal Comments
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                      {result.legal_comments_template_id && (
+                                        <Tooltip title={`Download template: ${result.legal_comments_template_filename || 'Legal Comments Template'}`}>
+                                          <IconButton
+                                            size="small"
+                                            color="primary"
+                                            onClick={() => handleDownloadTemplate(result.legal_comments_template_id, result.legal_comments_template_filename)}
+                                          >
+                                            <DownloadIcon />
+                                          </IconButton>
+                                        </Tooltip>
+                                      )}
+                                    </Box>
                                   </Box>
 
-                                  {/* List View */}
-                                  {commentsViewMode === 'list' && (
-                                    <Grid container spacing={2}>
-                                      {result.comments.map((comment, index) => {
-                                        const SeverityIcon = COMMENT_SEVERITY_ICONS[comment.severity] || InfoIcon;
-                                        return (
-                                          <Grid item xs={12} key={index}>
-                                            <Card variant="outlined" sx={{ bgcolor: `${COMMENT_SEVERITY_COLORS[comment.severity]}.light` }}>
-                                              <CardContent>
-                                                <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
-                                                  <SeverityIcon sx={{ mr: 2, mt: 0.5, color: `${COMMENT_SEVERITY_COLORS[comment.severity]}.dark` }} />
-                                                  <Box sx={{ flexGrow: 1 }}>
-                                                    <Typography variant="subtitle2" sx={{ fontWeight: 600, color: `${COMMENT_SEVERITY_COLORS[comment.severity]}.dark` }}>
-                                                      {comment.section || 'General'}
-                                                    </Typography>
-                                                    <Typography variant="body2" sx={{ mt: 1, color: `${COMMENT_SEVERITY_COLORS[comment.severity]}.dark` }}>
-                                                      {comment.comment}
-                                                    </Typography>
-                                                    {comment.suggestion && (
-                                                      <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic', color: `${COMMENT_SEVERITY_COLORS[comment.severity]}.dark` }}>
-                                                        <strong>Suggestion:</strong> {comment.suggestion}
-                                                      </Typography>
-                                                    )}
-                                                  </Box>
-                                                  <Chip
-                                                    label={comment.severity.toUpperCase()}
-                                                    size="small"
-                                                    color={COMMENT_SEVERITY_COLORS[comment.severity]}
-                                                    sx={{ ml: 2 }}
-                                                  />
-                                                </Box>
-                                              </CardContent>
-                                            </Card>
-                                          </Grid>
-                                        );
-                                      })}
-                                    </Grid>
-                                  )}
-
                                   {/* Compact View */}
-                                  {commentsViewMode === 'compact' && (
-                                    <Paper sx={{ p: 3, bgcolor: 'grey.50', maxHeight: '60vh', overflow: 'auto' }}>
-                                      <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, fontFamily: 'monospace' }}>
-                                        {result.comments.map((comment, index) => {
-                                          const severityLabel = comment.severity.toUpperCase();
-                                          const section = comment.section || 'GENERAL';
-                                          return `[${severityLabel}] ${section}\n${comment.comment}${comment.suggestion ? `\n→ Suggestion: ${comment.suggestion}` : ''}\n\n`;
-                                        }).join('')}
+                                  {result.comments.map((comment, index) => (
+                                    <Paper sx={{ 
+                                      p: 4, 
+                                      bgcolor: 'white', 
+                                      maxHeight: '60vh', 
+                                      overflow: 'auto',
+                                      border: '1px solid #e0e0e0',
+                                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                                    }} key={index}>
+                                      <Typography 
+                                        variant="body1" 
+                                        sx={{ 
+                                          whiteSpace: 'pre-wrap', 
+                                          lineHeight: 1.6, 
+                                          fontFamily: '"Times New Roman", Times, serif',
+                                          fontSize: '14px',
+                                          color: '#333',
+                                          textAlign: 'justify'
+                                        }}
+                                      >
+                                        {comment.comment}
                                       </Typography>
                                     </Paper>
-                                  )}
+                                  ))}
                                 </Box>
                               )}
 

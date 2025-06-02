@@ -19,11 +19,11 @@ from scripts.seed_templates import TemplateSeeder
 def should_auto_seed() -> bool:
     """Check if we should auto-seed templates"""
     try:
-        db_path = Path(__file__).parent.parent / "app.db"
-        if not db_path.exists():
+        db_path = os.environ.get('DATABASE_PATH', 'app.db')
+        if not Path(db_path).exists():
             return False
         
-        conn = sqlite3.connect(str(db_path))
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM contract_templates')
         count = cursor.fetchone()[0]

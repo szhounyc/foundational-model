@@ -38,7 +38,7 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 TEMPLATES_DIR = DATA_DIR / "templates"
-DATABASE_PATH = PROJECT_ROOT / "app.db"
+DATABASE_PATH = os.environ.get('DATABASE_PATH', 'app.db')
 
 # Template type mappings based on filename patterns
 TEMPLATE_TYPE_PATTERNS = {
@@ -100,12 +100,38 @@ class TemplateSeeder:
     
     def _get_db_connection(self) -> sqlite3.Connection:
         """Get database connection"""
-        if not self.db_path.exists():
-            print(f"❌ Database not found at {self.db_path}")
-            print("Please run the backend application first to initialize the database.")
-            sys.exit(1)
+        # Ensure database directory exists
+        db_path = Path(DATABASE_PATH)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         
-        return sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(DATABASE_PATH)
+        conn.row_factory = sqlite3.Row
+        
+        # Create tables if they don't exist
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS contract_templates (
+                id TEXT PRIMARY KEY,
+                law_firm_id TEXT NOT NULL,
+                law_firm_name TEXT NOT NULL,
+                template_type TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                content TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS law_firms (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                keywords TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        
+        conn.commit()
+        return conn
     
     def _detect_template_type(self, filename: str) -> str:
         """Detect template type from filename"""

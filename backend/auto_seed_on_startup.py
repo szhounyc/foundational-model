@@ -16,9 +16,9 @@ sys.path.append(str(Path(__file__).parent))
 
 def should_auto_seed() -> bool:
     """Check if we should auto-seed templates"""
-    db_path = Path(__file__).parent / "app.db"
+    db_path = os.environ.get('DATABASE_PATH', 'app.db')
     
-    if not db_path.exists():
+    if not Path(db_path).exists():
         return True
     
     try:

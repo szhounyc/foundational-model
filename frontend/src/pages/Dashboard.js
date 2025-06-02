@@ -28,7 +28,7 @@ import { useQuery } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-const API_BASE = process.env.REACT_APP_API_URL || '';
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:9100';
 
 function Dashboard() {
   const navigate = useNavigate();

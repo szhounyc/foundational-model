@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent
 DATA_DIR = PROJECT_ROOT / "data"
 TEMPLATES_DIR = DATA_DIR / "templates"
-DATABASE_PATH = PROJECT_ROOT / "database" / "contracts.db"
+DATABASE_PATH = os.environ.get('DATABASE_PATH', 'app.db')
 
 # Template type mappings based on filename patterns
 TEMPLATE_TYPE_MAPPING = {
@@ -47,17 +47,17 @@ DEFAULT_SEED_TEMPLATES = {
     "law_firm_id": "law_firm_1",
     "templates": [
         {
-            "source_path": "dataset/zlg-re/MNTN/Radiant/Contract Comments MNTN Radiant.docx",
+            "source_path": "data/templates/legal_comments/e23c850e-53a9-45e2-8fa6-2adc27e375f4_Contract Comments MNTN Radiant.docx",
             "template_type": "legal_comments",
             "description": "Legal comments template for Radiant project"
         },
         {
-            "source_path": "dataset/zlg-re/MNTN/Radiant/Unit 802 - 24-01 Queens Plaza North - Purchase Agreement (Yu and Wang).pdf",
+            "source_path": "data/templates/purchase_agreement/d3ac0c0f-2480-4df8-b771-033dd2226980_Unit 802 - 24-01 Queens Plaza North - Purchase Agreement (Yu and Wang).pdf",
             "template_type": "purchase_agreement", 
             "description": "Purchase agreement template for Queens Plaza North"
         },
         {
-            "source_path": "dataset/zlg-re/MNTN/Radiant/24-01 Queens Plaza North - Unit 802 (Yu and Wang) - Rider.pdf",
+            "source_path": "data/templates/rider/1cce3741-ef26-40af-8234-de3f06734d84_24-01 Queens Plaza North - Unit 802 (Yu and Wang) - Rider.pdf",
             "template_type": "rider",
             "description": "Rider template for Queens Plaza North"
         }
@@ -80,6 +80,10 @@ class TemplateSeeder:
     
     def get_db_connection(self) -> sqlite3.Connection:
         """Get database connection and ensure tables exist"""
+        # Ensure database directory exists
+        db_path = Path(DATABASE_PATH)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        
         conn = sqlite3.connect(DATABASE_PATH)
         conn.row_factory = sqlite3.Row
         
@@ -92,7 +96,8 @@ class TemplateSeeder:
                 template_type TEXT NOT NULL,
                 file_name TEXT NOT NULL,
                 file_path TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                content TEXT,
+                created_at TEXT NOT NULL
             )
         """)
         conn.commit()
@@ -139,13 +144,22 @@ class TemplateSeeder:
     def insert_template_to_db(self, template_id: str, law_firm_id: str, law_firm_name: str,
                             template_type: str, file_name: str, file_path: str):
         """Insert template record into database"""
+        # Extract content from the file
+        try:
+            from main import extract_text_from_file
+            full_file_path = PROJECT_ROOT / file_path
+            content = extract_text_from_file(str(full_file_path))
+        except Exception as e:
+            logger.warning(f"Could not extract content from {file_path}: {e}")
+            content = ""
+        
         conn = self.get_db_connection()
         try:
             conn.execute("""
                 INSERT INTO contract_templates 
-                (id, law_firm_id, law_firm_name, template_type, file_name, file_path, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (template_id, law_firm_id, law_firm_name, template_type, file_name, file_path, datetime.now()))
+                (id, law_firm_id, law_firm_name, template_type, file_name, file_path, content, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (template_id, law_firm_id, law_firm_name, template_type, file_name, file_path, content, datetime.now().isoformat()))
             conn.commit()
             logger.info(f"✅ Inserted template {file_name} into database")
         finally:
