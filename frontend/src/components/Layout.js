@@ -14,6 +14,7 @@ import {
   Typography,
   useTheme,
   useMediaQuery,
+  Button,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -23,8 +24,10 @@ import {
   Gavel as LegalIcon,
   Business as BusinessIcon,
   Assignment as TemplateIcon,
+  Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const drawerWidth = 240;
 
@@ -62,9 +65,14 @@ function Layout({ children }) {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
   const location = useLocation();
+  const { logout } = useAuth();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
+  };
+
+  const handleLogout = () => {
+    logout();
   };
 
   const drawer = (
@@ -73,7 +81,7 @@ function Layout({ children }) {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <LegalIcon color="primary" />
           <Typography variant="h6" noWrap component="div" color="primary">
-            Contract AI
+            ZLG Contract AI
           </Typography>
         </Box>
       </Toolbar>
@@ -143,9 +151,22 @@ function Layout({ children }) {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div">
-            {menuItems.find(item => item.path === location.pathname)?.text || 'Contract Review Platform'}
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
+            {menuItems.find(item => item.path === location.pathname)?.text || 'ZLG Contract AI Platform'}
           </Typography>
+          <Button
+            color="inherit"
+            onClick={handleLogout}
+            startIcon={<LogoutIcon />}
+            sx={{ 
+              textTransform: 'none',
+              '&:hover': {
+                backgroundColor: 'rgba(0,0,0,0.04)',
+              },
+            }}
+          >
+            Logout
+          </Button>
         </Toolbar>
       </AppBar>
       <Box
