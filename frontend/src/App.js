@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { QueryClient, QueryClientProvider } from 'react-query';
+import { Box, CircularProgress } from '@mui/material';
 
 // Import pages
 import ContractReview from './pages/ContractReview';
@@ -11,6 +12,10 @@ import Dashboard from './pages/Dashboard';
 import LawFirms from './pages/LawFirms';
 import Templates from './pages/Templates';
 import Layout from './components/Layout';
+import Login from './components/Login';
+
+// Import authentication
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 // Create theme
 const theme = createTheme({
@@ -69,27 +74,57 @@ const queryClient = new QueryClient({
   },
 });
 
+// Protected Routes Component
+const ProtectedRoutes = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: '100vh',
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/contract-review" element={<ContractReview />} />
+        <Route path="/review-history" element={<ReviewHistory />} />
+        <Route path="/law-firms" element={<LawFirms />} />
+        <Route path="/templates" element={<Templates />} />
+      </Routes>
+    </Layout>
+  );
+};
+
 function App() {
   useEffect(() => {
-    document.title = 'Contract Review Platform';
+    document.title = 'ZLG Contract AI Platform';
   }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Router>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/contract-review" element={<ContractReview />} />
-              <Route path="/review-history" element={<ReviewHistory />} />
-              <Route path="/law-firms" element={<LawFirms />} />
-              <Route path="/templates" element={<Templates />} />
-            </Routes>
-          </Layout>
-        </Router>
+        <AuthProvider>
+          <Router>
+            <ProtectedRoutes />
+          </Router>
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
