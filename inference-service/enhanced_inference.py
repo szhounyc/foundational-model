@@ -92,10 +92,11 @@ class FireworksAPIClient:
         
         # Model mapping from local IDs to hosted deployment IDs
         self.model_mapping = {
-            "sftj-qbplmzw9": "accounts/zhsy2011-05908b/deployedModels/zlg-re-fm-sl-mntn-llama3p2-1b-g04rbi28",
-            "sftj-s1xkr35z": "accounts/zhsy2011-05908b/deployedModels/zlg-re-fm-sl-mntn-llama3p2-1b-g04rbi28",
-            "sftj-wst3swj0": "accounts/zhsy2011-05908b/deployedModels/zlg-re-fm-sl-mntn-llama3p2-1b-g04rbi28",
+            "sftj-qbplmzw9": "accounts/zhsy2011-05908b/deployedModels/zlg-re-fm-sl-mntn-llama3p2-1b-oduz23l4",
+            "sftj-s1xkr35z": "accounts/zhsy2011-05908b/deployedModels/zlg-re-fm-sl-mntn-llama3p2-1b-oduz23l4",
+            "sftj-wst3swj0": "accounts/zhsy2011-05908b/deployedModels/zlg-re-fm-sl-mntn-llama3p2-1b-oduz23l4",
             # Add more mappings as needed
+            #accounts/zhsy2011-05908b/deployedModels/zlg-re-fm-sl-mntn-llama3p2-1b-oduz23l4
         }
         
         logger.info(f"✅ Fireworks API Client initialized with {len(self.model_mapping)} model mappings")
@@ -191,7 +192,7 @@ class FireworksAPIClient:
         start_time = datetime.now()
         
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=30)  # Reduced timeout
+            response = requests.post(url, headers=headers, json=payload, timeout=120)  # Increased timeout to 2 minutes
             response.raise_for_status()
             
             end_time = datetime.now()
@@ -224,7 +225,7 @@ class FireworksAPIClient:
                 raise ValueError("Invalid response format from Fireworks API")
                 
         except requests.exceptions.Timeout:
-            logger.error(f"❌ Fireworks API request timed out after 30 seconds")
+            logger.error(f"❌ Fireworks API request timed out after 120 seconds")
             # Return a fallback response for contract review
             return self._generate_fallback_response(messages, model_id)
         except requests.exceptions.RequestException as e:

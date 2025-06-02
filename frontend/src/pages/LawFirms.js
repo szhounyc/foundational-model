@@ -33,7 +33,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 
-const API_BASE = process.env.REACT_APP_API_URL || '';
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:9100';
 
 function LawFirms() {
   const [showAddDialog, setShowAddDialog] = useState(false);

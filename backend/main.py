@@ -19,6 +19,10 @@ import re
 from docx import Document
 from pathlib import Path
 import shutil
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -26,6 +30,10 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Database configuration
+DATABASE_PATH = os.environ.get('DATABASE_PATH', 'app.db')
+logger.info(f"Using database path: {DATABASE_PATH}")
 
 # Database models
 class TrainingJob(BaseModel):
@@ -96,7 +104,11 @@ class LawFirmCreate(BaseModel):
 
 # Database initialization
 def init_db():
-    conn = sqlite3.connect('app.db')
+    # Ensure database directory exists
+    db_path = Path(DATABASE_PATH)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     
     # Training jobs table
@@ -312,7 +324,7 @@ def detect_law_firm(text: str) -> tuple:
     logger.info("Starting law firm detection...")
     
     # Get all law firms from database
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT id, name, keywords FROM law_firms')
     law_firms = cursor.fetchall()
@@ -485,7 +497,7 @@ async def upload_document(file: UploadFile = File(...)):
         await f.write(content)
     
     # Save to database
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO pdf_files (id, filename, file_path, uploaded_at, size_bytes)
@@ -499,7 +511,7 @@ async def upload_document(file: UploadFile = File(...)):
 @app.get("/api/pdfs")
 async def list_pdfs():
     """List all uploaded PDF files"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM pdf_files ORDER BY uploaded_at DESC')
     rows = cursor.fetchall()
@@ -521,7 +533,7 @@ async def list_pdfs():
 @app.post("/api/pdfs/{pdf_id}/process")
 async def process_pdf(pdf_id: str, background_tasks: BackgroundTasks):
     """Process a PDF file to extract text for training"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT file_path FROM pdf_files WHERE id = ?', (pdf_id,))
     result = cursor.fetchone()
@@ -541,7 +553,7 @@ async def process_pdf(pdf_id: str, background_tasks: BackgroundTasks):
             )
             if response.status_code == 200:
                 # Update database
-                conn = sqlite3.connect('app.db')
+                conn = sqlite3.connect(DATABASE_PATH)
                 cursor = conn.cursor()
                 cursor.execute('UPDATE pdf_files SET processed = TRUE WHERE id = ?', (pdf_id,))
                 conn.commit()
@@ -569,7 +581,7 @@ async def get_available_models():
 @app.get("/api/models/trained")
 async def get_trained_models():
     """Get list of trained/fine-tuned models"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM models ORDER BY created_at DESC')
     rows = cursor.fetchall()
@@ -608,7 +620,7 @@ async def start_training(
     job_id = str(uuid.uuid4())
     
     # Save job to database
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO training_jobs (id, model_name, dataset_files, status, created_at, hyperparameters)
@@ -646,7 +658,7 @@ async def start_training(
 @app.get("/api/training/jobs")
 async def get_training_jobs():
     """Get all training jobs"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM training_jobs ORDER BY created_at DESC')
     rows = cursor.fetchall()
@@ -670,7 +682,7 @@ async def get_training_jobs():
 @app.get("/api/training/jobs/{job_id}")
 async def get_training_job(job_id: str):
     """Get specific training job details"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM training_jobs WHERE id = ?', (job_id,))
     row = cursor.fetchone()
@@ -780,7 +792,7 @@ async def upload_contract(file: UploadFile = File(...)):
 
     # Save to database
     logger.info(f"Saving file metadata to database")
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO pdf_files (id, filename, file_path, uploaded_at, size_bytes, extracted_text, processed, law_firm_id, law_firm_name)
@@ -804,7 +816,7 @@ async def upload_contract(file: UploadFile = File(...)):
 @app.get("/api/contracts/files")
 async def get_contract_files():
     """Get all uploaded contract files"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         SELECT id, filename, file_path, processed, uploaded_at, 
@@ -837,7 +849,7 @@ async def get_contract_files():
 @app.put("/api/contracts/files/{file_id}/document-type")
 async def update_document_type(file_id: str, document_type: str = Body(..., embed=True)):
     """Update the document type for a contract file"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     
     # Check if file exists
@@ -862,7 +874,7 @@ async def review_contracts(request: ContractReviewRequest):
     logger.info(f"Request details: files={request.contract_files}, model={request.model_id}, type={request.review_type}")
     
     # Save review request to database
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO contract_reviews (id, contract_files, model_id, review_type, status, created_at)
@@ -933,7 +945,7 @@ async def review_contracts(request: ContractReviewRequest):
                 logger.info(f"Review result keys: {list(review_result.keys())}")
                 
                 # Update database with results
-                conn = sqlite3.connect('app.db')
+                conn = sqlite3.connect(DATABASE_PATH)
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE contract_reviews 
@@ -956,7 +968,7 @@ async def review_contracts(request: ContractReviewRequest):
                 logger.error(f"Response content: {response.text}")
                 
                 # Update database with error
-                conn = sqlite3.connect('app.db')
+                conn = sqlite3.connect(DATABASE_PATH)
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE contract_reviews 
@@ -971,7 +983,7 @@ async def review_contracts(request: ContractReviewRequest):
     except httpx.RequestError as e:
         logger.error(f"Request error when calling inference service: {str(e)}")
         # Update database with error
-        conn = sqlite3.connect('app.db')
+        conn = sqlite3.connect(DATABASE_PATH)
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE contract_reviews 
@@ -986,7 +998,7 @@ async def review_contracts(request: ContractReviewRequest):
 @app.get("/api/contracts/reviews")
 async def get_contract_reviews():
     """Get all contract review history"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM contract_reviews ORDER BY created_at DESC')
     rows = cursor.fetchall()
@@ -1012,7 +1024,7 @@ async def get_contract_reviews():
 @app.get("/api/contracts/reviews/{review_id}")
 async def get_contract_review(review_id: str):
     """Get specific contract review details"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM contract_reviews WHERE id = ?', (review_id,))
     row = cursor.fetchone()
@@ -1038,7 +1050,7 @@ async def get_contract_review(review_id: str):
 @app.get("/api/law-firms")
 async def get_law_firms():
     """Get all law firms"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT id, name, keywords, created_at FROM law_firms ORDER BY name')
     rows = cursor.fetchall()
@@ -1060,7 +1072,7 @@ async def create_law_firm(law_firm: LawFirmCreate):
     """Create a new law firm"""
     law_firm_id = str(uuid.uuid4())
     
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     try:
         cursor.execute('''
@@ -1080,7 +1092,7 @@ async def create_law_firm(law_firm: LawFirmCreate):
 @app.get("/api/templates")
 async def get_templates(law_firm_id: Optional[str] = None, template_type: Optional[str] = None):
     """Get contract templates"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     
     query = 'SELECT id, law_firm_id, law_firm_name, template_type, file_name, file_path, created_at FROM contract_templates'
@@ -1144,7 +1156,7 @@ async def upload_template(
         raise HTTPException(status_code=400, detail="Invalid template type")
     
     # Get law firm name
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT name FROM law_firms WHERE id = ?', (law_firm_id,))
     row = cursor.fetchone()
@@ -1212,7 +1224,7 @@ async def upload_template(
 @app.get("/api/templates/{template_id}/content")
 async def get_template_content(template_id: str):
     """Get template content"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT content, template_type, law_firm_name FROM contract_templates WHERE id = ?', (template_id,))
     row = cursor.fetchone()
@@ -1231,7 +1243,7 @@ async def get_template_content(template_id: str):
 @app.get("/api/templates/{template_id}/download")
 async def download_template(template_id: str):
     """Download template file"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('SELECT file_path, file_name FROM contract_templates WHERE id = ?', (template_id,))
     row = cursor.fetchone()
@@ -1255,7 +1267,7 @@ async def download_template(template_id: str):
 @app.delete("/api/templates/{template_id}")
 async def delete_template(template_id: str):
     """Delete a template"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     
     # Get template info before deletion
@@ -1303,7 +1315,7 @@ async def generate_batch_contract_comments(request: BatchContractCommentRequest)
     logger.info(f"Starting batch contract comment generation for {len(request.contract_file_ids)} contracts")
     
     # Save comment request to database
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     
     # Use the first contract file ID as the primary reference for the comment record
@@ -1340,17 +1352,23 @@ async def generate_batch_contract_comments(request: BatchContractCommentRequest)
         # Parse legal comments from templates (only once for all documents)
         comments = []
         legal_comments_content = None
+        legal_comments_template_id = None
+        legal_comments_template_filename = None
         
         for template_row in template_rows:
             template_id, template_type, template_filename, template_content = template_row
             if template_type == 'legal_comments':
                 legal_comments_content = template_content
+                legal_comments_template_id = template_id
+                legal_comments_template_filename = template_filename
                 break
         
         if legal_comments_content:
             logger.info(f"Parsing legal comments content, length: {len(legal_comments_content)}")
             comments = parse_legal_comments(legal_comments_content)
             logger.info(f"Parsed {len(comments)} comments")
+        else:
+            logger.warning("No legal_comments template found or template content is empty")
         
         # Process each contract file individually for comparisons
         all_comparisons = []
@@ -1415,6 +1433,8 @@ async def generate_batch_contract_comments(request: BatchContractCommentRequest)
             "law_firm_id": request.law_firm_id,
             "law_firm_name": law_firm_name,
             "comments": comments,  # Single set of legal comments for all documents
+            "legal_comments_template_id": legal_comments_template_id,  # Template ID for download
+            "legal_comments_template_filename": legal_comments_template_filename,  # Template filename
             "document_comparisons": all_comparisons,  # Individual comparisons for each document
             "template_comparison": None  # Legacy field for backward compatibility
         }
@@ -1435,14 +1455,26 @@ async def generate_batch_contract_comments(request: BatchContractCommentRequest)
     except Exception as e:
         logger.error(f"Error in batch contract comment generation: {str(e)}")
         
-        # Update database with error
-        cursor.execute('''
-            UPDATE contract_comments 
-            SET status = ?, completed_at = ?
-            WHERE id = ?
-        ''', ("failed", datetime.now().isoformat(), comment_id))
-        conn.commit()
-        conn.close()
+        # Create a new database connection for error handling
+        try:
+            error_conn = sqlite3.connect(DATABASE_PATH)
+            error_cursor = error_conn.cursor()
+            error_cursor.execute('''
+                UPDATE contract_comments 
+                SET status = ?, completed_at = ?
+                WHERE id = ?
+            ''', ("failed", datetime.now().isoformat(), comment_id))
+            error_conn.commit()
+            error_conn.close()
+        except Exception as db_error:
+            logger.error(f"Failed to update database with error status: {str(db_error)}")
+        
+        # Ensure the original connection is closed if it's still open
+        try:
+            if 'conn' in locals() and conn:
+                conn.close()
+        except:
+            pass
         
         raise HTTPException(status_code=500, detail=f"Batch comment generation failed: {str(e)}")
 
@@ -1455,7 +1487,7 @@ async def generate_contract_comments(request: ContractCommentRequest):
     logger.info(f"Starting contract comment generation for contract: {request.contract_file_id}")
     
     # Save comment request to database
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO contract_comments (id, contract_file_id, law_firm_id, status, created_at)
@@ -1494,20 +1526,26 @@ async def generate_contract_comments(request: ContractCommentRequest):
             conn.close()
             raise HTTPException(status_code=404, detail=f"No templates found for law firm: {law_firm_name}")
         
-        # Parse legal comments from templates
+        # Parse legal comments from templates (only once for all documents)
         comments = []
         legal_comments_content = None
+        legal_comments_template_id = None
+        legal_comments_template_filename = None
         
         for template_row in template_rows:
             template_id, template_type, template_filename, template_content = template_row
             if template_type == 'legal_comments':
                 legal_comments_content = template_content
+                legal_comments_template_id = template_id
+                legal_comments_template_filename = template_filename
                 break
         
         if legal_comments_content:
             logger.info(f"Parsing legal comments content, length: {len(legal_comments_content)}")
             comments = parse_legal_comments(legal_comments_content)
             logger.info(f"Parsed {len(comments)} comments")
+        else:
+            logger.warning("No legal_comments template found or template content is empty")
         
         # Generate template comparisons based on document type
         comparisons = []
@@ -1548,6 +1586,8 @@ async def generate_contract_comments(request: ContractCommentRequest):
             "law_firm_name": law_firm_name,
             "comparisons": comparisons,
             "comments": comments,
+            "legal_comments_template_id": legal_comments_template_id,  # Template ID for download
+            "legal_comments_template_filename": legal_comments_template_filename,  # Template filename
             "template_comparison": None  # Legacy field for backward compatibility
         }
         
@@ -1567,21 +1607,33 @@ async def generate_contract_comments(request: ContractCommentRequest):
     except Exception as e:
         logger.error(f"Error in contract comment generation: {str(e)}")
         
-        # Update database with error
-        cursor.execute('''
-            UPDATE contract_comments 
-            SET status = ?, completed_at = ?
-            WHERE id = ?
-        ''', ("failed", datetime.now().isoformat(), comment_id))
-        conn.commit()
-        conn.close()
+        # Create a new database connection for error handling
+        try:
+            error_conn = sqlite3.connect(DATABASE_PATH)
+            error_cursor = error_conn.cursor()
+            error_cursor.execute('''
+                UPDATE contract_comments 
+                SET status = ?, completed_at = ?
+                WHERE id = ?
+            ''', ("failed", datetime.now().isoformat(), comment_id))
+            error_conn.commit()
+            error_conn.close()
+        except Exception as db_error:
+            logger.error(f"Failed to update database with error status: {str(db_error)}")
+        
+        # Ensure the original connection is closed if it's still open
+        try:
+            if 'conn' in locals() and conn:
+                conn.close()
+        except:
+            pass
         
         raise HTTPException(status_code=500, detail=f"Comment generation failed: {str(e)}")
 
 @app.get("/api/contracts/comments")
 async def get_contract_comments():
     """Get all contract comment history"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         SELECT cc.*, pf.filename, lf.name as law_firm_name 
@@ -1614,7 +1666,7 @@ async def get_contract_comments():
 @app.get("/api/contracts/comments/{comment_id}")
 async def get_contract_comment(comment_id: str):
     """Get specific contract comment details"""
-    conn = sqlite3.connect('app.db')
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         SELECT cc.*, pf.filename, lf.name as law_firm_name 
@@ -1644,48 +1696,19 @@ async def get_contract_comment(comment_id: str):
     }
 
 def parse_legal_comments(text: str) -> List[Dict]:
-    """Parse legal comments from template content into structured comments"""
+    """Parse legal comments from template content - return original content without artificial annotations"""
     logger.info(f"Starting to parse legal comments, text length: {len(text)}")
-    comments = []
     
-    # Split into paragraphs and clean
-    paragraphs = [p.strip() for p in text.split('\n') if p.strip() and len(p.strip()) > 10]
-    logger.info(f"Found {len(paragraphs)} paragraphs after filtering")
+    # Simply return the original legal comments content as-is
+    # No artificial severity levels, section parsing, or annotations
+    comments = [{
+        "comment": text.strip(),
+        "section": "Legal Comments",
+        "severity": "info",  # Neutral severity
+        "suggestion": None
+    }]
     
-    section_ref_pattern = r'(\d+\.\d+(?:\.\d+)?)'
-    
-    for i, paragraph in enumerate(paragraphs):
-        # Skip headers, footers, and very short content
-        if len(paragraph) < 30:
-            logger.debug(f"Skipping paragraph {i}, too short: {len(paragraph)} chars")
-            continue
-            
-        # Find section references in this paragraph
-        section_refs = re.findall(section_ref_pattern, paragraph)
-        
-        # Clean the comment text
-        clean_comment = re.sub(r'\s+', ' ', paragraph).strip()
-        
-        # Determine severity based on keywords
-        severity = "medium"
-        if any(word in clean_comment.lower() for word in ["critical", "urgent", "must", "required", "violation"]):
-            severity = "high"
-        elif any(word in clean_comment.lower() for word in ["suggest", "recommend", "consider", "minor"]):
-            severity = "low"
-        
-        # Extract section name from section references or use generic
-        section = f"Section {section_refs[0]}" if section_refs else "General Comment"
-        
-        comment_obj = {
-            "comment": clean_comment,
-            "section": section,
-            "severity": severity,
-            "suggestion": None  # Could be enhanced to extract suggestions
-        }
-        comments.append(comment_obj)
-        logger.debug(f"Added comment {len(comments)}: {section} - {severity}")
-    
-    logger.info(f"Finished parsing, returning {len(comments)} comments")
+    logger.info(f"Returning original legal comments content as single comment")
     return comments
 
 if __name__ == "__main__":

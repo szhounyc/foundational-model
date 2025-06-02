@@ -15,10 +15,11 @@ fi
 TEMPLATE_COUNT=$(python -c "
 import sqlite3
 import sys
+import os
 from pathlib import Path
 
-db_path = Path('backend/database/contracts.db')
-if not db_path.exists():
+db_path = os.environ.get('DATABASE_PATH', 'app.db')
+if not Path(db_path).exists():
     print('0')
     sys.exit()
 
